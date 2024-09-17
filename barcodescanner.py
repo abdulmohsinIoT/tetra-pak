@@ -33,47 +33,23 @@ key_map = {
 }
 
 def extract_data(s):
-    # Define the marker to search for
     marker = 'FNC103'
-    
-    # Find the position of the second "-"
     first_dash = s.find('-')
     second_dash = s.find('-', first_dash + 1)
-    
     if second_dash == -1:
-        return "Second dash not found"
-    
-    # Skip 4 characters after the second dash
+        return {"message": "Second dash not found", "success": False}
     start_of_interest = second_dash + 5
-    
-    # Find the marker 'FNC103'
     marker_index = s.find(marker)
-    
     if marker_index == -1:
-        return "Marker not found"
-    
-    # Extract the part between the skipped area and 'FNC103'
+        return {"message": "Marker not found", "success": False}
     count = s[start_of_interest:marker_index]
-    
-    # Extract production order (11 characters after 'FNC103')
     production_order_start = marker_index + len(marker)
     raw_production_order = s[production_order_start:production_order_start + 11]
-    
-    # Format production order by inserting a dash after the third character
     production_order = f"P{raw_production_order[:3]}-{raw_production_order[4:]}"
-    
-    # Extract reel number (6 characters after production order)
     reel_number_start = production_order_start + 11
     raw_reel_number = s[reel_number_start:reel_number_start + 6]
-    
-    # Format reel number by inserting a dash after the second character
     reel_number = f"{int(raw_reel_number[:2])}-{raw_reel_number[2:]}"
-    
-    return {
-        'var_count': count,
-        'production_order': production_order,
-        'reel_number': reel_number
-    }
+    return {'var_count': count, 'production_order': production_order, 'reel_number': reel_number, "success": True}
 
 
 def extract_pallet_contents(input_string):
@@ -95,8 +71,13 @@ def extract_pallet_contents(input_string):
     
     # Clean up any extra spaces or trailing commas
     pallet_contents = [p.strip() for p in pallet_contents if p.strip()]
+
+    first_10_chars = input_string[:10]
     
-    return pallet_contents
+    # Remove the first 3 characters from this substring
+    modified_chars = first_10_chars[3:]
+    
+    return {"pallet_contents": pallet_contents, "production_order": "P552-"+modified_chars, "success": True}
 
 def find_device(vendor_id, product_id):
     context = pyudev.Context()
@@ -134,6 +115,7 @@ while True:
     barcode = ""
 
     try:
+        reel_data = []
         for event in device.read_loop():
             if event.type == evdev.ecodes.EV_KEY:
                 key_event = evdev.categorize(event)
@@ -144,13 +126,16 @@ while True:
                             print(f"Scanned barcode: {barcode}")
                             print((f"Length: {len(barcode)}"))
                             small = extract_data(barcode)
-                            if(small == "Marker not found"):
-                                pallet_contents = extract_pallet_contents(barcode)
-
-                                for content in pallet_contents:
+                            if(small['success'] != True):
+                                contents = extract_pallet_contents(barcode)
+                                print(contents)
+                                print(f"production_order {contents['production_order']}")
+                                for content in contents["pallet_contents"]:
                                     print(content)
                             else:
                                 print(small)
+                                reel_data.append(small)
+                                print(reel_data)
                             small = ""
                             barcode = ""
                         else:
