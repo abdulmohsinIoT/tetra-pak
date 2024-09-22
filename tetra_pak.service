@@ -1,0 +1,15 @@
+[Unit]
+Description=Tetra Pak Pallet Verification Script
+
+[Service]
+ExecStart=/usr/bin/python3 /home/tetra-pak-pallet-verification/tetra-pak/script.py
+WorkingDirectory=/home/tetra-pak-pallet-verification/tetra-pak
+StandardOutput=journal
+StandardError=journal
+Restart=on-failure
+RestartSec=1
+User=root
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

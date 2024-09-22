@@ -4,25 +4,40 @@ from pyModbusTCP.client import ModbusClient
 import evdev
 import pyudev
 from collections import deque
+import logging
+
+# Configure logging
+logging.basicConfig(filename='app.log', 
+                    level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+logging.info("Program started.")
 
 # Initialize an empty queue
 queue = deque()
 
 def enqueue(item):
     """Add an item to the end of the queue."""
+    logging.info(f"Enqueuing item: {item}")
     queue.append(item)
 
 def dequeue():
     """Remove and return an item from the front of the queue. Raises an exception if the queue is empty."""
     if is_empty():
+        logging.error("Attempt to dequeue from an empty queue.")
         raise IndexError("Dequeue from an empty queue")
-    return queue.popleft()
+    item = queue.popleft()
+    logging.info(f"Dequeued item: {item}")
+    return item
 
 def peek():
     """Return the item at the front of the queue without removing it. Raises an exception if the queue is empty."""
     if is_empty():
+        logging.error("Attempt to peek from an empty queue.")
         raise IndexError("Peek from an empty queue")
-    return queue[0]
+    item = queue[0]
+    logging.info(f"Peeked at item: {item}")
+    return item
 
 def is_empty():
     """Check if the queue is empty."""
@@ -44,31 +59,32 @@ count = 0
 def connect_to_plc():
     """ Connect to the PLC. """
     if not modbus_client.open():
-        print("Failed to connect to PLC.")
+        logging.error("Failed to connect to PLC.")
         return False
+    logging.info("Connected to PLC successfully.")
     return True
 
 def read_coil(address):
     """ Read the state of a coil. """
     result = modbus_client.read_coils(address, 1)
     if result is None:
-        print(f"Failed to read coil at address {address}.")
+        logging.error(f"Failed to read coil at address {address}.")
         return False
     return result[0]
 
 def write_coil(address, value):
     """ Write a value to a coil. """
     if not modbus_client.write_single_coil(address, value):
-        print(f"Failed to write to coil at address {address}.")
+        logging.error(f"Failed to write to coil at address {address}.")
     else:
-        print(f"Coil at address {address} set to {value}")
+        logging.info(f"Coil at address {address} set to {value}")
 
 def write_register(address, value):
-    """ Write a value to a coil. """
+    """ Write a value to a register. """
     if not modbus_client.write_single_register(address, value):
-        print(f"Failed to write to coil at address {address}.")
+        logging.error(f"Failed to write to register at address {address}.")
     else:
-        print(f"Coil at address {address} set to {value}")
+        logging.info(f"Register at address {address} set to {value}")
 
 def verify_production_orders(objects):
     if not objects:
@@ -82,61 +98,52 @@ def verify_production_orders(objects):
     return all(order == first_order for order in production_orders)
 
 def plc_communication():
-    global scan_started
-    global scanning_mode
-    global pallet_data
-    global reels_data
-    global count
-    """ Continuous PLC communication loop. """
+    logging.info("Starting PLC communication Thread.")
+
+    global scan_started, scanning_mode, pallet_data, reels_data, count
     if not connect_to_plc():
         return
 
     while True:
         if read_coil(8):  # Address for coil m8
-            print("m8 is TRUE: Processing PLC logic (Start Scan Reels)")
-            if scan_started == False:
+            if not scan_started:
+                logging.info("m8 is TRUE: Processing PLC logic (Start Scan Reels)")
                 scan_started = True
                 scanning_mode = "reel"
                 count = 0
                 write_register(10, count)
 
-
         if read_coil(12):  # Address for coil 
-            print("m12 is TRUE: Processing PLC logic (Scan complete)")
-            print(f"Reels Data: {reels_data}")
-
+            logging.info("m12 is TRUE: Processing PLC logic (Scan complete)")
             write_coil(12, False)  # Reset Coil 12
 
-            sucess = verify_production_orders(reels_data)
+            if reels_data:
+                # logging.info(f"Reels Data: {reels_data}")
+                success = verify_production_orders(reels_data)
 
-            if(sucess):
-                print("Production orders correct!")
-                write_coil(14, True)  # Write to coil m14
-            else:
-                print("Production orders incorrect!")
-                write_coil(16, True)  # Write to coil m16
+                if success:
+                    logging.info("Production orders correct!")
+                    write_coil(14, True)  # Write to coil m14
+                else:
+                    logging.warning("Production orders incorrect!")
+                    write_coil(16, True)  # Write to coil m16
 
+                enqueue(reels_data)
 
-            enqueue(reels_data)
-
-            # Reset Global Variables
-            scan_started = False
-            scanning_mode = None
-            reels_data = []
-            count = 0
+                # Reset Global Variables
+                scan_started = False
+                scanning_mode = None
+                reels_data = []
+                count = 0
 
         if read_coil(40):  # Address for coil m40
-            print("m40 is TRUE: Processing PLC logic (Start Scan Pallet)")
-            if scan_started == False:
+            if not scan_started:
+                logging.info("m40 is TRUE: Processing PLC logic (Start Scan Pallet)")
                 scan_started = True
                 scanning_mode = "pallet"
 
         # Sleep to prevent high CPU usage
         time.sleep(1)
-
-    # Close connection (this line will never be reached due to infinite loop)
-    plc_client.close()
-
 
 def verify_data(reel_data, pallet_data):
     # Extract production order and contents from the input data
@@ -158,7 +165,6 @@ def verify_data(reel_data, pallet_data):
     # Check if both sets match
     return pallet_contents_set == reel_data_set
 
-# Barcode scanning code
 def extract_data(s):
     marker = 'FNC103'
     first_dash = s.find('-')
@@ -233,33 +239,53 @@ key_map = {
 }
 
 def wait_for_device(vendor_id, product_id):
+    run_once = False
     while True:
         device_path = find_device(vendor_id, product_id)
         if device_path:
+            logging.info(f"Device found: {device_path}")
+            write_coil(55, False)  # Write to coil m14
             return device_path
         else:
-            print("Device not found. Waiting for reconnect...")
-            time.sleep(5)  # Wait before trying again
+            if not run_once:
+                logging.info("Device not found. Waiting for reconnect...")
+                write_coil(55, True)  # Write to coil m14
+                run_once = True
+            time.sleep(1)  # Wait before trying again
+
+def log_scanner(message):
+    with open('scan_data.log', 'a') as f:
+        current_time = time.strftime('%Y-%m-%d %H:%M:%S')  # Get the current time
+        f.write(f'{current_time} - {message}\n')  # Write the message with timestamp
+
+def add_reel_data(scan_data):
+    global reels_data
+
+    """Add reel data if it's not already in the list and update count."""
+    if scan_data not in reels_data:
+        reels_data.append(scan_data)
+        logging.info(f"Added reel data: {scan_data}")
+        return True  # Indicate that data was added
+    else:
+        logging.info(f"Duplicate reel data not added: {scan_data}")
+        return False  # Indicate that data was not added
 
 def barcode_scanning():
-    global scan_started
-    global scanning_mode
-    global pallet_data
-    global reels_data
-    global count
+    logging.info("Starting Barcode Scanning Thread.")
+
+    global scan_started, scanning_mode, pallet_data, reels_data, count
     
     while True:
         device_path = wait_for_device(vendor_id, product_id)
         device = evdev.InputDevice(device_path)
-        print(f"Opened device {device.name} at {device_path}")
+        logging.info(f"Opened device {device.name} at {device_path}")
 
         try:
             device.grab()
-            print("Device grabbed successfully.")
+            logging.info("Device grabbed successfully.")
         except IOError as e:
-            print(f"Error grabbing device: {e}")
+            logging.error(f"Error grabbing device: {e}")
 
-        print("Listening for input...")
         barcode = ""
 
         try:
@@ -270,40 +296,44 @@ def barcode_scanning():
                         key = key_event.keycode
                         if key in key_map:
                             if key == 'KEY_ENTER':
-                                print(f"Scanned barcode: {barcode}")
+                                # logging.info(f"Scanned barcode: {barcode}")
+                                log_scanner(barcode)
                                 if scanning_mode == "reel":
                                     scan_data = extract_data(barcode)
-                                    if(scan_data['success'] == True):
-                                        count += 1
-                                        write_register(10, count)
-                                        reels_data.append(scan_data)
-                                elif scanning_mode == "pallet":
-                                    pallet_data = extract_pallet_contents(barcode)
-                                    print(f"pallet_data {pallet_data}")
-                                    if size() > 0:
-                                        reels_data = dequeue()
-                                        sucess = verify_data(reels_data, pallet_data)
-                                        if(sucess): 
-                                            print("Data match correct!")
-                                            write_coil(42, True)  # Write to coil m14
-                                        else:
-                                            print("Data match incorrect!")
-                                            write_coil(44, True)  # Write to coil m16
-                                    else:
-                                        print("Queue is Empty!")
-                                        write_coil(44, True)  # Write to coil m16
+                                    if scan_data['success']:
+                                        if add_reel_data(scan_data):
+                                            count += 1
+                                            write_register(10, count)
 
-                                    # Reset Global Variables
-                                    scan_started = False
-                                    scanning_mode = None
-                                    reels_data = []
-                                    count = 0
+                                elif scanning_mode == "pallet":
+                                    scan_data = extract_data(barcode)
+                                    if not scan_data['success']:
+                                        pallet_data = extract_pallet_contents(barcode)
+                                        logging.info(f"Pallet data extracted: {pallet_data}")
+                                        if size() > 0:
+                                            reels_data = dequeue()
+                                            success = verify_data(reels_data, pallet_data)
+                                            if success: 
+                                                logging.info("Data match correct!")
+                                                write_coil(42, True)  # Write to coil m14
+                                            else:
+                                                logging.warning("Data match incorrect!")
+                                                write_coil(44, True)  # Write to coil m16
+                                        else:
+                                            logging.warning("Queue is Empty!")
+                                            write_coil(44, True)  # Write to coil m16
+
+                                        # Reset Global Variables
+                                        scan_started = False
+                                        scanning_mode = None
+                                        reels_data = []
+                                        count = 0
 
                                 barcode = ""
                             else:
                                 barcode += key_map[key]
         except OSError:
-            print("Device removed or error occurred. Waiting for reconnect...")
+            logging.error("Device removed or error occurred. Waiting for reconnect...")
 
 if __name__ == "__main__":
     # Start PLC thread
