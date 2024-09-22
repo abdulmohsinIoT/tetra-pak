@@ -56,14 +56,6 @@ pallet_data = None
 reels_data = []
 count = 0
 
-def connect_to_plc():
-    """ Connect to the PLC. """
-    if not modbus_client.open():
-        logging.error("Failed to connect to PLC.")
-        return False
-    logging.info("Connected to PLC successfully.")
-    return True
-
 def read_coil(address):
     """ Read the state of a coil. """
     result = modbus_client.read_coils(address, 1)
@@ -97,50 +89,70 @@ def verify_production_orders(objects):
     first_order = production_orders[0]
     return all(order == first_order for order in production_orders)
 
+def connect_to_plc():
+    """ Connect to the PLC. """
+    if not modbus_client.open():
+        logging.error("Failed to connect to PLC.")
+        return False
+    logging.info("Connected to PLC successfully.")
+    return True
+
 def plc_communication():
-    logging.info("Starting PLC communication Thread.")
+    logging.info("Starting PLC communication thread.")
 
     global scan_started, scanning_mode, pallet_data, reels_data, count
-    if not connect_to_plc():
-        return
+
+    # Attempt to connect to PLC in a loop until successful
+    while not connect_to_plc():
+        logging.warning("Retrying connection to PLC in 5 seconds...")
+        time.sleep(5)
 
     while True:
-        if read_coil(8):  # Address for coil m8
-            if not scan_started:
-                logging.info("m8 is TRUE: Processing PLC logic (Start Scan Reels)")
-                scan_started = True
-                scanning_mode = "reel"
-                count = 0
-                write_register(10, count)
+        try:
+            if read_coil(8):  # Address for coil m8
+                if not scan_started:
+                    logging.info("m8 is TRUE: Processing PLC logic (Start Scan Reels)")
+                    scan_started = True
+                    scanning_mode = "reel"
+                    count = 0
+                    write_register(10, count)
 
-        if read_coil(12):  # Address for coil 
-            logging.info("m12 is TRUE: Processing PLC logic (Scan complete)")
-            write_coil(12, False)  # Reset Coil 12
+            if read_coil(12):  # Address for coil m12
+                logging.info("m12 is TRUE: Processing PLC logic (Scan complete)")
+                write_coil(12, False)  # Reset Coil 12
 
-            if reels_data:
-                # logging.info(f"Reels Data: {reels_data}")
-                success = verify_production_orders(reels_data)
+                if reels_data:
+                    success = verify_production_orders(reels_data)
 
-                if success:
-                    logging.info("Production orders correct!")
-                    write_coil(14, True)  # Write to coil m14
-                else:
-                    logging.warning("Production orders incorrect!")
-                    write_coil(16, True)  # Write to coil m16
+                    if success:
+                        logging.info("Production orders correct!")
+                        write_coil(14, True)  # Write to coil m14
+                    else:
+                        logging.warning("Production orders incorrect!")
+                        write_coil(16, True)  # Write to coil m16
 
-                enqueue(reels_data)
+                    enqueue(reels_data)
 
-                # Reset Global Variables
-                scan_started = False
-                scanning_mode = None
-                reels_data = []
-                count = 0
+                    # Reset Global Variables
+                    scan_started = False
+                    scanning_mode = None
+                    reels_data = []
+                    count = 0
 
-        if read_coil(40):  # Address for coil m40
-            if not scan_started:
-                logging.info("m40 is TRUE: Processing PLC logic (Start Scan Pallet)")
-                scan_started = True
-                scanning_mode = "pallet"
+            if read_coil(40):  # Address for coil m40
+                if not scan_started:
+                    logging.info("m40 is TRUE: Processing PLC logic (Start Scan Pallet)")
+                    scan_started = True
+                    scanning_mode = "pallet"
+
+        except Exception as e:
+            logging.error(f"Error during PLC communication: {e}")
+            logging.warning("Attempting to reconnect to PLC in 5 seconds...")
+            time.sleep(5)  # Wait before retrying connection
+            # Try to reconnect
+            while not connect_to_plc():
+                logging.warning("Retrying connection to PLC in 5 seconds...")
+                time.sleep(5)
 
         # Sleep to prevent high CPU usage
         time.sleep(1)
