@@ -1,0 +1,13 @@
+[Unit]
+Description=ViewData Python Service
+After=graphical.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/tetra-pak-pallet-verification/tetra-pak/ViewData.py
+WorkingDirectory=/home/tetra-pak-pallet-verification/tetra-pak
+StandardOutput=journal
+StandardError=journal
+Restart=always
+
+[Install]
+WantedBy=default.target

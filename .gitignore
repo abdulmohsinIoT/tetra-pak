@@ -54,3 +54,5 @@ coverage.xml
 # Other files
 *.db
 *.sqlite3
+/reports
+config.ini
