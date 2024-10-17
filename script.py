@@ -295,6 +295,7 @@ def plc_communication():
                         subject = 'Reel Data Mismatch Notification'
                         body, row_data = format_reel_data_email(reels_data)
                         append_row(row_data)
+                        append_row(row_data, report_type='monthly')
                         send_email(subject, body)
 
                 # Reset Global Variables
@@ -459,28 +460,49 @@ def add_reel_data(scan_data):
         logging.info(f"Duplicate reel data not added: {scan_data}")
         return False  # Indicate that data was not added
 
-def get_file_path():
+def get_file_path(report_type='daily'):
+    """
+    Get the file path for daily or monthly reports.
+    
+    :param report_type: 'daily' (default) or 'monthly' to specify the type of report
+    :return: The full file path for the Excel report
+    """
     # Get current working directory
     current_dir = os.getcwd()
     
     # Define the reports folder
     reports_folder = os.path.join(current_dir, 'reports')
     
+    # For monthly reports, create a 'monthly' subfolder
+    if report_type == 'monthly':
+        reports_folder = os.path.join(reports_folder, 'monthly')
+    
     # Create the reports folder if it doesn't exist
     if not os.path.exists(reports_folder):
         os.makedirs(reports_folder)
     
-    # Generate the filename with the current date
-    today = datetime.now().strftime('%Y-%m-%d')
-    file_name = f'{today}.xlsx'
+    # Generate the filename based on the report type
+    if report_type == 'daily':
+        today = datetime.now().strftime('%Y-%m-%d')
+        file_name = f'{today}.xlsx'
+    elif report_type == 'monthly':
+        current_month = datetime.now().strftime('%Y-%m')
+        file_name = f'{current_month}.xlsx'
+    else:
+        raise ValueError("Invalid report_type. Use 'daily' or 'monthly'.")
     
     # Full path to the Excel file
     file_path = os.path.join(reports_folder, file_name)
     
     return file_path
 
-def create_excel_file():
-    file_path = get_file_path()
+def create_excel_file(report_type='daily'):
+    """
+    Create an Excel file for daily or monthly reports if it doesn't exist.
+    
+    :param report_type: 'daily' (default) or 'monthly' to specify the type of report
+    """
+    file_path = get_file_path(report_type)
 
     if not os.path.exists(file_path):
         # Create a new workbook and add column headers
@@ -492,13 +514,19 @@ def create_excel_file():
     else:
         logging.info(f"Excel file '{file_path}' already exists.")
 
-def append_row(data):
-    file_path = get_file_path()
+def append_row(data, report_type='daily'):
+    """
+    Append a row to the Excel file for daily or monthly reports.
+    
+    :param data: The row data to append
+    :param report_type: 'daily' (default) or 'monthly' to specify the type of report
+    """
+    file_path = get_file_path(report_type)
 
     # Check if the file exists, if not, create it
     if not os.path.exists(file_path):
         logging.warning(f"File '{file_path}' not found. Creating a new one.")
-        create_excel_file()
+        create_excel_file(report_type)
 
     # Open the existing or newly created Excel file and select the active sheet
     wb = load_workbook(file_path)
@@ -509,7 +537,7 @@ def append_row(data):
     
     # Save the workbook
     wb.save(file_path)
-    logging.info(f"Row {data} appended to the Excel file.")
+    logging.info(f"Row {data} appended to the {report_type} Excel file.")
 
 def generate_excel_row(reel_data, pallet_data, success):
     # Get the current date and time
@@ -590,6 +618,7 @@ def barcode_scanning():
                                         success = verify_data(reels_data, pallet_data)
                                         row_data = generate_excel_row(reels_data, pallet_data, success)
                                         append_row(row_data)
+                                        append_row(row_data, report_type='monthly')
                                         if success: 
                                             logging.info("Data match correct!")
                                             write_coil(42, True)  # Write to coil m14
