@@ -273,6 +273,7 @@ def plc_communication():
                     logging.info("m8 is TRUE: Processing PLC logic (Start Scan Reels)")
                     scan_started = True
                     scanning_mode = "reel"
+                    reels_data = []
                     count = 0
                     write_register(10, count)
 
@@ -296,7 +297,7 @@ def plc_communication():
                         body, row_data = format_reel_data_email(reels_data)
                         append_row(row_data)
                         append_row(row_data, report_type='monthly')
-                        send_email(subject, body)
+                        # send_email(subject, body)
 
                 # Reset Global Variables
                 scan_started = False
@@ -628,7 +629,7 @@ def barcode_scanning():
 
                                             subject = "Reel and Pallet Data Mismatch Detected"
                                             body = generate_mismatch_email(reels_data, pallet_data)
-                                            send_email(subject, body)
+                                            # send_email(subject, body)
                                         # if size() > 0:
                                         #     reels_data = dequeue()
                                         #     success = verify_data(reels_data, pallet_data)
@@ -672,7 +673,7 @@ def send_daily_report():
 
     # # Sending email with attachment
     file_path = get_file_path()
-    send_email(subject, body, file_path=file_path)
+    # send_email(subject, body, file_path=file_path)
 
     # Here you can add the code you want to run daily
     # For example: sending an email, creating a report, etc.
