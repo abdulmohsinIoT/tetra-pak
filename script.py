@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import evdev
 import pyudev
@@ -363,28 +364,46 @@ def extract_data(s):
     return {'var_count': count, 'production_order': production_order, 'reel_number': reel_number, "success": True}
 
 def extract_pallet_contents(input_string):
+    # Define regex pattern to verify pallet format
+    pallet_pattern = r'^\d+-\d+ \/ \d+$'
+
+    # Find the first dash and attempt to get first_pallet_content
     first_dash_index = input_string.find('-')
     first_pallet_content_start = first_dash_index - 1
     first_pallet_content_end = input_string.find(',', first_dash_index)
     first_pallet_content = input_string[first_pallet_content_start:first_pallet_content_end]
+
+    # If first_pallet_content doesn't match the pallet pattern, find the last dash and re-calculate
+    if not re.match(pallet_pattern, first_pallet_content):
+        last_dash_index = first_pallet_content.rfind('-')
+        if last_dash_index != -1:
+            first_pallet_content_start = last_dash_index - 1
+            first_pallet_content = first_pallet_content[first_pallet_content_start:]
+
+    # Split the rest of the contents
     remaining_pallet_contents = input_string[first_pallet_content_end + 1:].split(',')
     pallet_contents = [first_pallet_content] + remaining_pallet_contents
     pallet_contents = [p.strip() for p in pallet_contents if p.strip()]
 
-    # Modify pallet contents to convert the numbers after the slash
+    # Modify pallet contents to convert numbers after the slash
     modified_pallet_contents = []
     for content in pallet_contents:
         if ' / ' in content:
             part_before_slash, part_after_slash = content.split(' / ')
-            part_after_slash_int = str(int(part_after_slash))  # Convert to int and back to str
+            part_after_slash_int = str(int(part_after_slash))  # Remove leading zeros by converting to int
             modified_pallet_contents.append(f"{part_before_slash} / {part_after_slash_int}")
         else:
             modified_pallet_contents.append(content)
 
+    # Extract and format production order
     first_10_chars = input_string[:10]
     modified_chars = first_10_chars[3:]
     
-    return {"pallet_contents": modified_pallet_contents, "production_order": "P552-"+modified_chars, "success": True}
+    return {
+        "pallet_contents": modified_pallet_contents,
+        "production_order": "P552-" + modified_chars,
+        "success": True
+    }
 
 def find_device(vendor_id, product_id):
     context = pyudev.Context()
